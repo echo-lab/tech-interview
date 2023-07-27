@@ -5,10 +5,7 @@ import socket from '../webrtc/socket';
 //import Peer from 'simple-peer';
 import { useSelector, useDispatch } from 'react-redux';
 import { setColor, setName } from '../redux/features/pcs/userSlice';
-import Receiver from './Receiver';
-import Sender from './Sender';
 import Peer from "simple-peer"
-import {saveAs} from "file-saver"
 import { Editor } from './Editor';
 import TimeStamps from './TimeStamps';
 
@@ -42,7 +39,6 @@ export default function Room (props) {
   const [videoOff, setVideoOff] = useState(false);
   const myVideo = useRef();
   const [peer, setPeer] = useState(null);
-  const [screenPeer, setScreenPeer] = useState(null);
   const peerRef = useRef(null);
   const peerVideo = useRef(null);
   const [ready, setReady] = useState(false);
@@ -54,7 +50,6 @@ export default function Room (props) {
   const mediaRecorderRef = useRef(null);
   const [replay, setReplay] = useState(false);
   const [recording, setRecording] = useState(false);
-  const [recordStarted, setRecordStarted] = useState(false);
 
   const [recordedBlob, setRecordedBlob] = useState([]);
   const [videoUrl, setVideoUrl] = useState('');
@@ -62,7 +57,6 @@ export default function Room (props) {
   const timerRef = useRef(null);
   const idRef = useRef(null)
 
-  const timeOpened = Date.now();
 
   const navigate = useNavigate();
 
@@ -345,13 +339,14 @@ export default function Room (props) {
       setStarted(true);
     }
   }
-
+  /*
   const handleReplay = (blob) => {
     setReplay(true);
     setVideoUrl(blob.url);
     console.log(blob)
 		socket.emit("hit replay", blob);
   }
+  */
 
   const handlePlay = async (blob) => {
     setReplay(true);
@@ -417,16 +412,6 @@ export default function Room (props) {
   const handleTerminate = () => {
     setStarted(false);
     mediaRecorderRef.current.stop();
-  }
-
-	const convertTime = (time) => {
-    var hours   = Math.floor(time / 3600);
-    //console.log(hours)
-    var minutes = Math.floor((time - (hours * 3600)) / 60);
-    var seconds = Math.round(time - (hours * 3600) - (minutes * 60));
-    //return hours.toString().padStart(2, "0") + ":" + minutes.toString().padStart(2, "0") + ":" + seconds.toString().padStart(2, "0");
-    return hours.toString().padStart(2, "0") + ":" + minutes.toString().padStart(2, "0") + ":" + seconds.toString().padStart(2, "0");
-
   }
 
   return (
