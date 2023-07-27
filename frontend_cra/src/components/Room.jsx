@@ -1,7 +1,6 @@
 import  {useEffect, useState, useRef} from 'react';
 import { useLoaderData, useNavigate } from "react-router-dom";
 import { BsFillVolumeMuteFill, BsFillVolumeUpFill, BsCameraVideoFill, BsCameraVideoOffFill} from 'react-icons/bs';
-import CodeEditor from './CodeEditor';
 import socket from '../webrtc/socket';
 //import Peer from 'simple-peer';
 import { useSelector, useDispatch } from 'react-redux';
@@ -9,12 +8,16 @@ import { setColor, setName } from '../redux/features/pcs/userSlice';
 import Receiver from './Receiver';
 import Sender from './Sender';
 import Peer from "simple-peer"
+import {saveAs} from "file-saver"
+import { Editor } from './Editor';
+import TimeStamps from './TimeStamps';
 
 
 export function roomLoader({ params }) {
   const roomId = params.roomId;
   return roomId;
 }
+
 
 function PartyVideo (props) {
 
@@ -54,8 +57,10 @@ export default function Room (props) {
   const [recordStarted, setRecordStarted] = useState(false);
 
   const [recordedBlob, setRecordedBlob] = useState([]);
-  const [videoUrl, setVideoUrl] = useState(null);
+  const [videoUrl, setVideoUrl] = useState('');
   const [recorder, setRecorder] = useState(false);
+  const timerRef = useRef(null);
+  const idRef = useRef(null)
 
   const timeOpened = Date.now();
 
@@ -82,28 +87,19 @@ export default function Room (props) {
 				//Interviewer created room
         socket.on("created", (data) => {
           console.log("created room " + data.roomId);
+          idRef.current = data.role;
           setReady(true);
-          
+          setRecorder(true);
         });
 
-				//TODO: replay received, 
-				socket.on("replay received", (data) => {
-					console.log(data)
-					setReplay(true);
-    			setVideoUrl(data.url);
-				})
-
-				//TODO: replay ended, 
-				socket.on("replay ended", (data) => {
-					setReplay(false);
-					setVideoUrl(null);
-				})
-      
 				//Interviewee joined room
         socket.on("joined", (data) => {
           const peer = call(data.partner, socket.id, currentStream);
           peerRef.current = peer;
+          idRef.current = data.role;
           setPeer(peer);
+
+          setReady(true);
         });
 
 				//Interviewer received a call
@@ -113,6 +109,7 @@ export default function Room (props) {
           peerRef.current = peer;
 					//COPY THIS TO CONNECTION  SET!
           setPeer(peer);
+          socket.emit("request editor")
         });
 
 				//Interviewee's call answered
@@ -121,18 +118,36 @@ export default function Room (props) {
           peerObj.signal(data.receiverSig);
           socket.emit("request code", roomId);
 					socket.emit("request replay", roomId);
+          socket.emit("request editor")
 					console.log("call answered")
 					peerRef.current.on('error', (err) => console.error('Peer error:', err));
 					//console.log('what up')
-					peerRef.current.on('data', (d)=>{
-						console.log('got a message from recorder: '+d);
+          let chunks = []
 
-						peerRef.current.send("hello other guy from recordee?");
+					peerRef.current.on('data', async (d)=>{
+            console.log(d)
+            if (new TextDecoder().decode(d) === "END_OF_DATA") {
+              console.log('end');
+              let b = new Blob(chunks, { type: 'video/webm;codecs=vp8' }); 
+              let sizeInBytes = b.size;
+              const ab = await b.arrayBuffer();
+              console.log(ab);
+              console.log('Blob type: ' + b.type)
+              console.log('Blob size: ' + sizeInBytes + ' bytes');
+              const url = (window.URL||window.webkitURL).createObjectURL(b);
+              setVideoUrl(url);
+              //saveAs(b, 'recording.mp4');
+              setReplay(true);
+            } else {
+                chunks.push(d);
+            }
 
 					})
 
-					//socket.emit("request replay", roomId);
-          setReady(true);
+          socket.on("replay ended", ()=>{
+            setReplay(false)
+          })
+
           
         });
 
@@ -146,7 +161,48 @@ export default function Room (props) {
 
 				//replay event start 
 				socket.on('ready for replay', (data) => {
-					navigator.mediaDevices.getDisplayMedia({video:{width:640, height:480}, audio: true, preferCurrentTab:true })
+          /*
+          const mediaRecorder = new MediaRecorder(currentStream);
+          mediaRecorderRef.current = mediaRecorder;
+          
+
+          let chunk = []
+          mediaRecorder.onstart = () => {
+            setRecording(true);
+          }
+
+          console.log(peerRef.current)
+          peerRef.current.on('error', (d)=>{
+            console.log(d);
+          })
+          
+          mediaRecorder.ondataavailable = (e) => {
+            if (e.data && e.data.size > 0) {
+              chunk.push(e.data);
+            }
+          };
+
+          mediaRecorder.onstop = (e) => {
+            const blob = new Blob(chunk, {type: 'video/webm;codecs=vp8'});
+            let sizeInBytes = blob.size;
+            console.log('Blob size: ' + sizeInBytes + ' bytes');
+            console.log(blob);
+            //const url = window.URL.createObjectURL(blob);
+            //setVideoUrl(url);
+
+            const newRecordedBlob = recordedBlob;
+            newRecordedBlob.push({time:Date.now()-timeOpened, blob:blob});
+            setRecordedBlob(newRecordedBlob);
+            setRecording(false);
+            
+            chunk = [];
+
+          }*/
+          
+          //setRecorder(true);
+          
+          
+					navigator.mediaDevices.getDisplayMedia({video:{width:640, height:480}, audio: true, preferCurrentTab:true, mimeType: "video/webm;codecs=vp8", })
             .then((screenStream) => {
               //notes for myself
               //Create new audio context
@@ -173,59 +229,10 @@ export default function Room (props) {
                 setRecording(true);
               }
 
-							/*
-							mediaRecorder.ondataavailable = (e) => {
-								const c = e.data;
-
-								const reader = new FileReader();
-								reader.onloadend = function() {
-									const arrayBuffer = reader.result;
-
-									// Send the ArrayBuffer as part of a message object
-									peer.send(JSON.stringify({
-										type: 'video',
-										data: arrayBuffer
-									}));
-								}
-
-								reader.readAsArrayBuffer(c);
-							}
-							*/
-
 							console.log(peerRef.current)
-							//why???????
-							peerRef.current.on('data', (d)=>{
-								console.log('got a message from recordee: '+d);
-							})
 							peerRef.current.on('error', (d)=>{
 								console.log(d);
 							})
-
-							peerRef.current.send("hello other guy from recorder?");
-
-							
-							
-							/*
-							const recorderPeer = new Peer ({
-								initiator: false, 
-								trickle: false,
-							})
-
-							console.log(data)
-							recorderPeer.signal(data.requesterSig)
-							console.log(recorderPeer)
-
-							recorderPeer.on('signal', (d) => {
-								console.log("connected")
-
-								socket.emit("sending replay", {requesterId: data.requesterId, recorderSig: d})
-							});
-
-							recorderPeer.on('data', (d) => {
-								console.log("that's what's up")
-							})
-							*/
-
 							
               mediaRecorder.ondataavailable = (e) => {
                 if (e.data && e.data.size > 0) {
@@ -234,12 +241,15 @@ export default function Room (props) {
               };
 
               mediaRecorder.onstop = (e) => {
-                const blob = new Blob(chunk);
-                const url = window.URL.createObjectURL(blob);
+                const blob = new Blob(chunk, {type: 'video/webm;codecs=vp8'});
+                let sizeInBytes = blob.size;
+                console.log('Blob size: ' + sizeInBytes + ' bytes');
+                console.log(blob);
+                //const url = window.URL.createObjectURL(blob);
                 //setVideoUrl(url);
 
                 const newRecordedBlob = recordedBlob;
-                newRecordedBlob.push({time:Date.now()-timeOpened, url:url});
+                newRecordedBlob.push({time:Date.now()-timerRef.current, blob:blob});
                 setRecordedBlob(newRecordedBlob);
                 setRecording(false);
                 
@@ -252,6 +262,7 @@ export default function Room (props) {
             .catch(e => {
               console.log(e)
             })
+          
 				})
       })
       .catch((e) => {
@@ -330,6 +341,7 @@ export default function Room (props) {
     setReplay(false);
     mediaRecorderRef.current.start();
     if (!started){
+      timerRef.current = Date.now();
       setStarted(true);
     }
   }
@@ -339,6 +351,55 @@ export default function Room (props) {
     setVideoUrl(blob.url);
     console.log(blob)
 		socket.emit("hit replay", blob);
+  }
+
+  const handlePlay = async (blob) => {
+    setReplay(true);
+    const url = (window.URL||window.webkitURL).createObjectURL(blob.blob);
+    setVideoUrl(url);
+    const bf = await blob.blob.arrayBuffer()
+    console.log(bf)
+    console.log('Blob type: ' + blob.blob.type)
+    //saveAs(blob.blob, 'recorder_recording.mp4');
+    
+    let reader = new FileReader();
+
+    reader.onloadend = function () {
+      let arrayBuffer = this.result;
+      let chunkSize = 16 * 1024; // 16 KiB
+      let start = 0;
+
+      function sendNextChunk() {
+        console.log(arrayBuffer.byteLength)
+          if (start < arrayBuffer.byteLength) {
+
+              console.log(start)
+              let end = Math.min(start + chunkSize, arrayBuffer.byteLength);
+              let chunk = arrayBuffer.slice(start, end);
+
+              peerRef.current.send(chunk); // `peer` is your SimplePeer instance
+              start = end;
+
+              console.log(end)
+              // Give the browser a chance to handle other events
+              setTimeout(sendNextChunk, 0);
+          } else {
+              // All chunks have been sent
+              console.log("EOD SENT? ")
+              peerRef.current.send("END_OF_DATA"); // Send a special "end of data" message
+          }
+      }
+
+      sendNextChunk(); // Start sending chunks
+    }
+    /*
+    reader.onloadend = function() {
+        let arrayBuffer = this.result;
+        peerRef.current.send(arrayBuffer);
+    };
+    */
+    console.log(blob.blob.size)
+    reader.readAsArrayBuffer(blob.blob);
   }
 
   const handleTimeStamp = () => {
@@ -370,7 +431,7 @@ export default function Room (props) {
 
   return (
     <div className='flex flex-col h-full'>
-      <div className='flex flex-row items-center justify-between h-auto p-4 text-5xl border-b-2 border-vt-burnt-orange'>Room: {roomId}</div>
+      <div className='flex flex-row items-center justify-between h-auto p-4 text-5xl border-b-2 border-vt-burnt-orange z-0'>Room: {roomId}</div>
       <div className="flex space-x-0 flex-row flex-1 min-w-full h-full overflow-hidden">
         <div className="w-1/5 p-4 border-r-2">
           <div className="w-full flex flex-col space-y-9">
@@ -395,58 +456,59 @@ export default function Room (props) {
               </div>
             </div>
             {peer !== null && <PartyVideo videoRef={peerVideo} username={username}/>}
-						{recordedBlob.map((blob, _) => {
-								return(
-									<div key={blob.time}>
-										<button onClick={()=>handleReplay(blob)}>Timestamp: {convertTime(blob.time/1000)}</button>
-									</div>
-								)
-							})}
+            <TimeStamps recordedBlob={recordedBlob} handlePlay={handlePlay}/>
+						
           </div>
         </div>
         <div className="bg-vt-white w-4/5 flex flex-row h-full overflow-hidden" >
           <div className="w-1/2" >
-            {ready? <CodeEditor roomId={roomId} /> : <div>Getting connection</div>}
+            {ready? <Editor id={idRef.current}/>: <div>Getting connection</div>}
           </div>
           <div className='w-1/2 flex flex-col gap-5 p-5'>
             <div className='flex flex-col items-start gap-3'> 
-							<div className='flex flex-wrap flex-row items-start gap-2'>
-								<button 
-									className='bg-vt-maroon text-vt-white p-1 enabled:hover:brightness-125 disabled:bg-vt-grey '
-									disabled={!recorder || recording}
-									onClick={handleRecord}
-								>
-									Record
-								</button>
-								<button 
-									className='bg-vt-maroon text-vt-white p-1 enabled:hover:brightness-125 disabled:bg-vt-grey ' 
-									disabled={!recorder || !started}
-									onClick={handleTimeStamp}
-								>
-									Add stamp
-								</button>
-								<button 
-									className='bg-vt-maroon text-vt-white p-1 enabled:hover:brightness-125 disabled:bg-vt-grey ' 
-									disabled={!recorder || !replay}
-									onClick={handleStopReplay}
-								>
-									Stop Replaying
-								</button>
-								<button 
-									className='bg-vt-maroon text-vt-white p-1 enabled:hover:brightness-125 disabled:bg-vt-grey ' 
-									disabled={!recorder || !started}
-									onClick={handleTerminate}
-								>
-									Stop Recording
-								</button>
-							</div>
-							{!replay ? <div>no</div> : recorder ?  <video autoPlay controls src={videoUrl}></video> : <div>replay</div>}
+
+              {recorder &&
+                <div className='flex flex-wrap flex-row items-start gap-2'>
+                  <button 
+                    className='bg-vt-maroon text-vt-white p-1 enabled:hover:brightness-125 disabled:bg-vt-grey '
+                    disabled={recording}
+                    onClick={()=>handleRecord()}
+                  >
+                    Record
+                  </button>
+                  <button 
+                    className='bg-vt-maroon text-vt-white p-1 enabled:hover:brightness-125 disabled:bg-vt-grey ' 
+                    disabled={!started}
+                    onClick={()=>handleTimeStamp()}
+                  >
+                    Add stamp
+                  </button>
+                  <button 
+                    className='bg-vt-maroon text-vt-white p-1 enabled:hover:brightness-125 disabled:bg-vt-grey ' 
+                    disabled={!replay}
+                    onClick={()=>handleStopReplay()}
+                  >
+                    Stop Replaying
+                  </button>
+                  <button 
+                    className='bg-vt-maroon text-vt-white p-1 enabled:hover:brightness-125 disabled:bg-vt-grey ' 
+                    disabled={!started}
+                    onClick={()=>handleTerminate()}
+                  >
+                    Stop Recording
+                  </button>
+                </div>
+              }
+							{!replay ? <div>no</div> : <video autoPlay controls src={videoUrl}></video> }
             </div>
 
           </div>
+          
         </div>
       </div>
     </div>
     
   );
 }
+
+//{ready? <CodeEditor roomId={roomId} /> : <div>Getting connection</div>}

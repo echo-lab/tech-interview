@@ -3,11 +3,11 @@ import io from 'socket.io-client';
 import * as random from 'lib0/random';
 
 
-//const ENDPOINT = process.env.production === 'BUILD' ? 'localhost:5000' : 'https://tech-interview-server.herokuapp.com/' 
-
-
-//const socket = io('https://tech-interview-server.herokuapp.com/');
-const socket = io('localhost:5000');
+const ENDPOINT = process.env.REACT_APP_built === 'developing' ? 'localhost:5000' : 'https://tech-interview-server.herokuapp.com/' 
+//console.log(process.env.production)
+console.log(process.env.REACT_APP_built)
+const socket = io(ENDPOINT);
+//const socket = io('localhost:5000');
 
 
 
